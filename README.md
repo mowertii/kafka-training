@@ -13,6 +13,10 @@
 | 3 | Error Handling: Retry, DLT, Backoff | [feature/homework-3](https://github.com/mowertii/kafka-training/tree/feature/homework-3) | ✅ Готово |
 | 4 | Idempotent consumer and inbox; replay and deduplication | [feature/homework-4](https://github.com/mowertii/kafka-training/tree/feature/homework-4) | ✅ Готово |
 | 5 | Transactional Outbox + Failure Testing | [feature/homework-5](https://github.com/mowertii/kafka-training/tree/feature/homework-5) | ✅ Готово |
+| 6 | 🔄 Monitoring | [feature/homework-6](https://github.com/mowertii/kafka-training/tree/feature/homework-6) | (в процессе!)
+| 7 | ⏳ Connect | [feature/homework-7](https://github.com/mowertii/kafka-training/tree/feature/homework-7) | (в ожидании!)
+| 8 | ⏳ Streams | [feature/homework-8](https://github.com/mowertii/kafka-training/tree/feature/homework-8) | (в ожидании!)
+| 9 | ⏳ K8s/DR  | [feature/homework-9](https://github.com/mowertii/kafka-training/tree/feature/homework-9) | (в ожидании!)
 ---
 
 ## Как работать
