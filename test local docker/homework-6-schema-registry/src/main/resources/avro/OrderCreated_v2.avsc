@@ -1,0 +1,10 @@
+{
+  "type": "record",
+  "name": "OrderCreated",
+  "namespace": "ru.otus.kafka.hw6.avro",
+  "fields": [
+    {"name": "orderId", "type": "int"},
+    {"name": "userId", "type": "int"},
+    {"name": "createdAt", "type": "string", "default": ""}
+  ]
+}

@@ -1,0 +1,41 @@
+# Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+wingit/
+ДЗ_kafka/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+docker-compose.override.yml
+
+# Env
+.env
+*.local
+
+# Temporary
+tmp/
+temp/
+*.bak
+*.swp
+
+# Maven Shade Plugin
+dependency-reduced-pom.xml
+dependency-reduced-pom.xml

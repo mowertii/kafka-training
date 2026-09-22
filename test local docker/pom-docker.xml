@@ -10,94 +10,53 @@
     <version>1.0.0</version>
     <packaging>pom</packaging>
 
-    <name>Kafka Training - Parent POM</name>
-    <description>Multi-module project for Kafka training homework</description>
+    <name>Kafka Training - Parent POM (Docker build)</name>
 
-    <!-- ============================================================ -->
-    <!-- МОДУЛИ                                                        -->
-    <!-- ============================================================ -->
     <modules>
         <module>common</module>
-        <module>homework-6-monitoring</module>
-        <module>homework-7-connect</module>
-        <module>homework-8-streams</module>
-        <module>homework-9-k8s</module>
+        <module>homework-6-schema-registry</module>
     </modules>
 
-    <!-- ============================================================ -->
-    <!-- ОБЩИЕ СВОЙСТВА                                                -->
-    <!-- ============================================================ -->
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- Версии зависимостей -->
         <kafka.version>4.3.1</kafka.version>
         <jackson.version>2.17.2</jackson.version>
         <postgresql.version>42.7.4</postgresql.version>
         <slf4j.version>2.0.13</slf4j.version>
-
-        <!-- Для ДЗ №6 -->
         <micrometer.version>1.12.5</micrometer.version>
-        <prometheus.version>1.12.5</prometheus.version>
-
-        <!-- Для ДЗ №7 -->
-        <kafka.connect.version>4.3.1</kafka.connect.version>
-
-        <!-- Для ДЗ №8 -->
-        <kafka.streams.version>4.3.1</kafka.streams.version>
-
-        <!-- Для ДЗ №9 -->
-        <kubernetes.client.version>6.10.0</kubernetes.client.version>
+        <avro.version>1.11.3</avro.version>
+        <confluent.version>7.6.0</confluent.version>
     </properties>
 
-    <!-- ============================================================ -->
-    <!-- DEPENDENCY MANAGEMENT                                         -->
-    <!-- ============================================================ -->
     <dependencyManagement>
         <dependencies>
-            <!-- Общий модуль -->
             <dependency>
                 <groupId>ru.otus.kafka</groupId>
                 <artifactId>kafka-training-common</artifactId>
                 <version>${project.version}</version>
             </dependency>
-
-            <!-- Kafka -->
             <dependency>
                 <groupId>org.apache.kafka</groupId>
                 <artifactId>kafka-clients</artifactId>
                 <version>${kafka.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.apache.kafka</groupId>
-                <artifactId>kafka-streams</artifactId>
-                <version>${kafka.streams.version}</version>
+                <groupId>org.apache.avro</groupId>
+                <artifactId>avro</artifactId>
+                <version>${avro.version}</version>
             </dependency>
-
-            <!-- JSON -->
             <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-databind</artifactId>
-                <version>${jackson.version}</version>
+                <groupId>io.confluent</groupId>
+                <artifactId>kafka-avro-serializer</artifactId>
+                <version>${confluent.version}</version>
             </dependency>
-
-            <!-- PostgreSQL -->
             <dependency>
-                <groupId>org.postgresql</groupId>
-                <artifactId>postgresql</artifactId>
-                <version>${postgresql.version}</version>
+                <groupId>io.confluent</groupId>
+                <artifactId>kafka-schema-registry-client</artifactId>
+                <version>${confluent.version}</version>
             </dependency>
-
-            <!-- Logging -->
-            <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>slf4j-simple</artifactId>
-                <version>${slf4j.version}</version>
-            </dependency>
-
-            <!-- Metrics (ДЗ №6) -->
             <dependency>
                 <groupId>io.micrometer</groupId>
                 <artifactId>micrometer-core</artifactId>
@@ -106,14 +65,33 @@
             <dependency>
                 <groupId>io.micrometer</groupId>
                 <artifactId>micrometer-registry-prometheus</artifactId>
-                <version>${prometheus.version}</version>
+                <version>${micrometer.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-simple</artifactId>
+                <version>${slf4j.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
 
-    <!-- ============================================================ -->
-    <!-- ОБЩИЕ ПЛАГИНЫ                                                 -->
-    <!-- ============================================================ -->
+    <repositories>
+        <repository>
+            <id>confluent</id>
+            <url>https://packages.confluent.io/maven/</url>
+        </repository>
+    </repositories>
+
     <build>
         <pluginManagement>
             <plugins>
@@ -124,6 +102,11 @@
                     <configuration>
                         <release>21</release>
                     </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.avro</groupId>
+                    <artifactId>avro-maven-plugin</artifactId>
+                    <version>${avro.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

@@ -1,5 +1,10 @@
 @echo off
 setlocal
-echo Building Java app and starting Kafka/PostgreSQL if needed...
-docker compose -p kafka-training run --rm --build app init
-exit /b %errorlevel%
+echo ============================================================
+echo Starting Kafka + PostgreSQL infrastructure...
+echo ============================================================
+docker compose -p kafka-training up -d kafka postgres
+echo.
+echo Waiting for services to be healthy...
+ping 127.0.0.1 -n 11 >nul
+docker compose -p kafka-training ps

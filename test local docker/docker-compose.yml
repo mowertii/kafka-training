@@ -1,4 +1,7 @@
 services:
+  # ============================================================
+  # KAFKA (KRaft mode)
+  # ============================================================
   kafka:
     image: apache/kafka:4.3.1
     hostname: kafka
@@ -30,6 +33,9 @@ services:
       retries: 30
       start_period: 15s
 
+  # ============================================================
+  # POSTGRESQL
+  # ============================================================
   postgres:
     image: postgres:16-alpine
     container_name: kafka-training-postgres
@@ -45,15 +51,93 @@ services:
       timeout: 5s
       retries: 20
 
-  app:
-    build: .
+  # ============================================================
+  # SCHEMA REGISTRY (для HW6 Avro + HW7 Connect)
+  # ============================================================
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.0
+    hostname: schema-registry
+    container_name: kafka-training-schema-registry
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "kafka:19092"
+      SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8081"
+      SCHEMA_REGISTRY_DEBUG: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
+      interval: 15s
+      timeout: 10s
+      retries: 30           # 👈 УВЕЛИЧИТЬ
+      start_period: 180s    # 👈 УВЕЛИЧИТЬ с 90 до 180
+    profiles: ["hw6", "hw7"]
+
+  # ============================================================
+  # HW6 — SCHEMA REGISTRY + AVRO
+  # ============================================================
+  hw6-app:
+    build:
+      context: .
+      dockerfile: homework-6-schema-registry/Dockerfile
     depends_on:
       kafka:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      schema-registry:
+        condition: service_healthy
     environment:
       BOOTSTRAP_SERVERS: kafka:19092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
       JDBC_URL: jdbc:postgresql://postgres:5432/kafkademo
       JDBC_USER: demo
       JDBC_PASSWORD: demo
+    profiles: ["hw6"]
+    stdin_open: false
+    tty: false
+
+  # ============================================================
+  # HW7 — CONNECT (заготовка)
+  # ============================================================
+  hw7-app:
+    build:
+      context: .
+      dockerfile: homework-7-connect/Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      BOOTSTRAP_SERVERS: kafka:19092
+    profiles: ["hw7"]
+
+  # ============================================================
+  # HW8 — STREAMS (заготовка)
+  # ============================================================
+  hw8-app:
+    build:
+      context: .
+      dockerfile: homework-8-streams/Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      BOOTSTRAP_SERVERS: kafka:19092
+    profiles: ["hw8"]
+
+  # ============================================================
+  # HW9 — K8S (заготовка)
+  # ============================================================
+  hw9-app:
+    build:
+      context: .
+      dockerfile: homework-9-k8s/Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      BOOTSTRAP_SERVERS: kafka:19092
+    profiles: ["hw9"]
