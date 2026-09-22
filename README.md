@@ -1,289 +1,271 @@
-# 📝 ДЗ №5 — Transactional Outbox + тестирование сбоев
+# Домашнее задание №6 — Schema Registry и эволюция схем
 
-## 📌 Описание
+## Описание
 
-Домашнее задание посвящено паттерну **Transactional Outbox** — надёжной передаче событий из БД в Kafka без потери данных при сбоях.
+Настройка работы с **Avro** и **Schema Registry**, проверка совместимости версий схем и выявление несовместимых изменений до их использования в приложении.
 
-- **Проблема:** последовательный вызов `save()` + `producer.send()` может потерять событие при падении между ними
-- **Решение:** сохранять событие в таблицу `outbox` **в одной транзакции** с бизнес-данными, а отправлять его отдельным publisher'ом
-- **Гарантия:** событие **не потеряется** даже при недоступности Kafka — оно останется в `outbox` до успешной отправки
+**Цель работы:** настроить работу с Avro и Schema Registry, проверить совместимость версий схем и научиться выявлять несовместимые изменения до их использования в приложении.
 
----
+## Структура проекта
 
-## ⚙️ Требования
-
-| Компонент | Версия |
-|-----------|--------|
-| **Docker** | 20.10+ |
-| **Docker Compose** | 2.0+ |
-| **Java** | 21 |
-| **Kafka** | 4.3.1 (KRaft) |
-| **PostgreSQL** | 16 |
-
----
-
-## 🚀 Запуск
-
-```bash
-git clone git@github.com:mowertii/kafka-training.git
-cd kafka-training
-git checkout feature/homework-5
+```
+kafka-training/
+├── common/                              # Общие утилиты
+│   └── src/main/java/ru/otus/kafka/common/
+│       ├── KafkaUtils.java
+│       ├── JsonUtils.java
+│       ├── EnvUtils.java
+│       ├── DbUtils.java
+│       └── LogUtils.java
+│
+├── homework-6-schema-registry/          # ДЗ №6: Schema Registry + Avro
+│   ├── src/main/avro/                   # Avro-схемы
+│   │   ├── OrderCreated.avsc            # V1
+│   │   ├── OrderCreated_v2.avsc         # V2 (совместимая)
+│   │   └── OrderCreated_incompatible.avsc  # V3 (несовместимая)
+│   │
+│   ├── src/main/resources/avro/         # Копии схем для загрузки
+│   │   ├── OrderCreated.avsc
+│   │   ├── OrderCreated_v2.avsc
+│   │   └── OrderCreated_incompatible.avsc
+│   │
+│   ├── src/main/java/ru/otus/kafka/hw6/
+│   │   ├── Hw6App.java                  # Точка входа
+│   │   └── schema/
+│   │       ├── SchemaRegistrar.java             # Регистрация схем
+│   │       └── SchemaCompatibilityCheck.java    # Проверка совместимости
+│   │
+│   ├── Dockerfile                       # Multi-stage сборка
+│   └── pom.xml
+│
+├── docker-compose.yml                   # Kafka + PostgreSQL + Schema Registry
+├── pom.xml                              # Parent POM
+├── pom-docker.xml                       # POM для Docker-сборки
+├── hw6.cmd                              # Скрипт запуска (Windows)
+├── hw6.sh                               # Скрипт запуска (Linux/Git Bash)
+└── README.md                            # Этот файл
 ```
 
-**Windows:**
+## Требования
+
+| Компонент | Версия |
+|---|---|
+| Docker Desktop | 20.10+ |
+| Docker Compose | 2.0+ |
+| Java | 21 |
+| Apache Kafka | 4.3.1 (KRaft) |
+| Schema Registry | Confluent 7.6.0 |
+| Avro | 1.11.3 |
+
+## Запуск
+
+### Единый скрипт (рекомендуется)
+
+**Windows CMD:**
 ```cmd
-hw5.cmd
+hw6.cmd
 ```
 
-**Linux / macOS / Git Bash:**
+**Git Bash / Linux:**
 ```bash
-./hw5.sh
+./hw6.sh
 ```
 
-### Что произойдёт автоматически
+Скрипт делает всё автоматически:
+1. Запускает инфраструктуру
+2. Ждёт готовности Schema Registry (90 секунд)
+3. Регистрирует V1
+4. Регистрирует V2 (совместимую)
+5. Проверяет V3 (несовместимую)
+6. Показывает результаты через REST API
 
-| Шаг | Команда | Действие | Результат |
-|-----|---------|----------|-----------|
-| 1 | `init` | Создание топиков и таблиц | 11 топиков + 6 таблиц |
-| 2 | `outbox-fail` | Заказ + outbox в одной транзакции → **СБОЙ** | Заказ в `orders`, событие в `outbox` (`status=pending`) |
-| 3 | `outbox-relay` | Повторная отправка | Событие в Kafka, `status=published` |
-| 4 | `psql` | Проверка состояния БД | `status=published`, `published=true` |
+### Пошаговый запуск (для отладки)
 
----
+```bash
+# 1. Инфраструктура
+docker compose -p kafka-training --profile hw6 up -d
 
-## 🔄 Схема работы
+# 2. Регистрация V1
+docker compose -p kafka-training --profile hw6 run --rm hw6-app register-v1
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ ШАГ 1. Бизнес-транзакция (атомарная)                                │
-│                                                                     │
-│   ┌─────────────────┐         ┌─────────────────────────┐           │
-│   │  INSERT orders  │         │  INSERT outbox          │           │
-│   │                 │         │  (status='pending')     │           │
-│   └────────┬────────┘         └───────────┬─────────────┘           │
-│            └──────────────┬───────────────┘                         │
-│                           ▼                                         │
-│                    COMMIT TRANSACTION                               │
-└─────────────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ ШАГ 2. Publisher (батчами, короткими транзакциями)                  │
-│                                                                     │
-│   T1: SELECT ... WHERE status='pending' LIMIT 100 FOR UPDATE SKIP   │
-│       UPDATE status='processing'                                    │
-│       COMMIT                                                        │
-│                                                                     │
-│   Send to Kafka (ВНЕ транзакции)                                    │
-│                                                                     │
-│   T2: UPDATE status='published' WHERE id IN (sent)                  │
-│       UPDATE status='pending'   WHERE id IN (failed)                │
-│       COMMIT                                                        │
-└─────────────────────────────────────────────────────────────────────┘
+# 3. Регистрация V2
+docker compose -p kafka-training --profile hw6 run --rm hw6-app register-v2
+
+# 4. Проверка V3
+docker compose -p kafka-training --profile hw6 run --rm hw6-app check-v3
 ```
 
----
+### Проверка через REST API
 
-## 📊 Статусы `outbox`
+```bash
+# Список subjects
+curl http://localhost:8081/subjects
 
-| Статус | Значение |
-|--------|----------|
-| `pending` | Ждёт отправки (default) |
-| `processing` | Взято relay'ем в работу — защита от гонки между инстансами |
-| `published` | Успешно отправлено в Kafka |
-| `failed` | Постоянная ошибка, требует ручного разбора |
+# Версии схемы
+curl http://localhost:8081/subjects/orders-value/versions
 
----
+# Последняя схема
+curl http://localhost:8081/subjects/orders-value/versions/latest
 
-## 📈 Ожидаемые логи
-
-### Шаг 2 — `outbox-fail`
-
-```
-📝 [БД] orders: id=hw5-order-fail-1 status=CREATED amount=1500
-📝 [БД] outbox: id=<uuid> eventType=OrderCreated published=false
-✅ [БД] Транзакция закоммичена: order + outbox записаны АТОМАРНО. Kafka ещё не знает.
-
-🔥 [СБОЙ] KAFKA_FAILURE_MODE=true
-❌ [KAFKA] Отправка ПРОВАЛИЛАСЬ: Искусственный сбой
-🔧 [СБОЙ] KAFKA_FAILURE_MODE=false
-
-🔍 [ПРОВЕРКА] Состояние после сбоя:
-   orders:  id=hw5-order-fail-1 status=CREATED amount=1500 ✅
-   outbox:  id=<uuid> eventType=OrderCreated published=false status=pending ⏳
-
-🔍 [ПРОВЕРКА] Kafka: событие НЕ должно быть в orders.events
-   ✅ Kafka НЕ получила событие для aggregateId=hw5-order-fail-1
+# Режим совместимости
+curl http://localhost:8081/config/orders-value
 ```
 
-### Шаг 3 — `outbox-relay`
+### Остановка
 
-```
-🔍 [ПРОВЕРКА] pending-события в outbox:
-   ⏳ id=<uuid> aggregateId=hw5-order-fail-1 eventType=OrderCreated status=pending
-
-🚀 [RELAY] Запуск relay с батчингом (BATCH_SIZE=100)
-📥 [RELAY] Взят батч: 1 событий (status='processing')
-send topic=orders.events partition=0 offset=0 key=hw5-order-fail-1 eventType=OrderCreated
-📤 [RELAY] Батч завершён: отправлено=1, ошибок=0
-
-🔍 [ПРОВЕРКА] Состояние после успешной отправки:
-   ✅ Все события отправлены (status='published', published=true)
-
-🔍 [ПРОВЕРКА] Kafka: событие ДОЛЖНО быть в orders.events
-CONSUME topic=orders.events partition=0 offset=0 key=hw5-order-fail-1 eventType=OrderCreated
+```bash
+docker compose -p kafka-training down --remove-orphans
 ```
 
-### Финальная проверка БД
+## Avro-схемы
 
-```
-                  id                  |   aggregate_id   |  event_type  |  status   | published
---------------------------------------+------------------+--------------+-----------+-----------
- 5593d63e-bd9c-437c-a7f7-dd96aa5e38bd | hw5-order-fail-1 | OrderCreated | published | t
-```
+### V1 — базовая схема
 
----
-
-## ❓ Ответы на вопросы ТЗ
-
-### Какую проблему решает Transactional Outbox?
-
-**Проблему dual-write.** Приложение пишет в **две системы** — БД и Kafka — и между этими записями **нет атомарности**.
-
-Возможные сбои:
-
-| Сценарий | Последствие |
-|----------|-------------|
-| `save()` OK, `send()` FAIL | Заказ в БД есть, Kafka не знает |
-| `save()` OK, приложение упало перед `send()` | То же самое |
-| `save()` FAIL, `send()` OK | Событие о несуществующем заказе |
-| `save()` OK, `send()` OK, ack потерялся | Дубль в Kafka |
-
-**Transactional Outbox решает так:**
-1. Бизнес-данные и событие пишутся в **одну БД** — в одной транзакции.
-2. Событие лежит в `outbox` со статусом `pending` и **пока не уходит в Kafka**.
-3. Отдельный publisher отправляет события в Kafka **после** коммита бизнес-транзакции.
-4. Если Kafka недоступна — событие остаётся в `outbox` до успеха.
-
-**Итог:** приложение не зависит от доступности Kafka в момент бизнес-операции. Событие **гарантированно** попадёт в Kafka (at-least-once).
-
----
-
-### Почему недостаточно последовательно выполнить `save()` и `producer.send()`?
-
-Потому что **между этими двумя вызовами нет транзакции**. Это две независимые операции над двумя разными системами.
-
-**Наивный код:**
-```java
-orderRepository.save(order);       // ← строка 1
-kafkaProducer.send(event);         // ← строка 2
-```
-
-**Проблемы:**
-1. **Разрыв между строками 1 и 2.** Приложение упало/сеть отвалилась **после** `save()`, но **до** `send()` — событие никогда не уйдёт в Kafka.
-2. **Обратный порядок — тоже плохо.** `send()` OK, `save()` упал — событие о несуществующем заказе.
-3. **Нет ретраев.** Даже с `try/catch` нет гарантии, что повторная отправка не создаст дубль.
-4. **Нет «точки истины».** Непонятно, что уже отправлено, а что нет — нечем восстановиться после сбоя.
-
-**С Outbox:** заказ + событие в одной транзакции → атомарность, восстановление, развязка с Kafka.
-
-**Ключевая мысль:** `save()` + `producer.send()` — это **распределённая транзакция без координатора**. Outbox — самый простой способ решить эту проблему.
-
----
-
-## 🛠️ Устранение долгих блокировок (замечание ревью)
-
-### Проблема в первой (базовой) версии
-
-Одна длинная транзакция держала блокировки `FOR UPDATE` на всё время синхронной отправки в Kafka:
-
-```java
-c.setAutoCommit(false);
-SELECT ... FOR UPDATE SKIP LOCKED    ← открываем транзакцию
-for (each row) {
-    producer.send(...).get();        ← синхронный I/O
-    UPDATE published=true;
+```json
+{
+  "type": "record",
+  "name": "OrderCreated",
+  "namespace": "ru.otus.kafka.hw6.avro",
+  "fields": [
+    {"name": "orderId", "type": "int"},
+    {"name": "userId", "type": "int"}
+  ]
 }
-c.commit();                          ← закрываем транзакцию
 ```
 
-**Последствия:**
-- Медленный брокер (100 ms × 1000 событий = 100 секунд) → долгие блокировки в PostgreSQL
-- Bloat, рост WAL, параллельные relay'и ждут
-- Откат всей транзакции при ошибке в середине
+### V2 — совместимая (добавили `createdAt`)
 
-### Что стало — батчинг + две короткие транзакции
-
-1. **Транзакция №1:** `SELECT ... LIMIT 100 FOR UPDATE SKIP LOCKED` → `UPDATE status='processing'` → **COMMIT** (блокировки сняты).
-2. **Отправка в Kafka** — **вне** транзакции БД.
-3. **Транзакция №2:** `UPDATE status='published'` для успешных, `UPDATE status='pending'` для ошибочных → **COMMIT**.
-
-**Результат:**
-
-| Было | Стало |
-|------|-------|
-| ❌ Транзакция открыта всё время отправки | ✅ Транзакция — только на чтение и обновление |
-| ❌ `FOR UPDATE` держит блокировки долго | ✅ Блокировки сняты после COMMIT №1 |
-| ❌ Параллельные relay'и ждут | ✅ `SKIP LOCKED` + `status='processing'` |
-| ❌ Ошибка в середине → откат всего | ✅ Ошибочные → `pending`, успешные зафиксированы |
-| ❌ Медленный брокер = долгие блокировки | ✅ БД не страдает |
-
-### Известное ограничение
-
-Между **Транзакцией №1** и **Транзакцией №2** блокировка **снята**. Если relay упадёт **после** `send()` в Kafka, но **до** `UPDATE status='published'`:
-
-- Событие **уже в Kafka**.
-- Статус в БД остался `processing`.
-- При следующем запуске relay увидит `processing`-строки, только если добавить их обработку.
-
-**Решения для production:**
-1. **Периодический retry `processing`:** `WHERE status='processing' AND updated_at < NOW() - INTERVAL '5 minutes'` → вернуть в `pending`.
-2. **Exactly-once producer (транзакции Kafka)** — сложнее, но убирает дубли.
-3. **Debezium CDC** — читать WAL PostgreSQL вместо polling, гонок нет.
-
-**Для учебного ДЗ:** семантика **at-least-once** — событие гарантированно уйдёт, но при сбое между `send` и `UPDATE` возможен **дубль**. Защита от дублей — задача потребителя (см. ДЗ №4, Inbox Pattern).
-
----
-
-## 🧹 Остановка
-
-```bash
-stop.cmd   # или ./stop.sh (Linux)
-docker compose -p kafka-training down -v   # полная очистка
+```json
+{
+  "type": "record",
+  "name": "OrderCreated",
+  "namespace": "ru.otus.kafka.hw6.avro",
+  "fields": [
+    {"name": "orderId", "type": "int"},
+    {"name": "userId", "type": "int"},
+    {"name": "createdAt", "type": "string", "default": ""}
+  ]
+}
 ```
 
----
+**Почему совместима:**
+- добавили поле `createdAt` с `default`;
+- старые consumer'ы смогут читать новые данные (получат пустую строку);
+- BACKWARD совместимо.
 
-## 🛠️ Технологии
+### V3 — несовместимая (изменили тип `orderId`)
+
+```json
+{
+  "type": "record",
+  "name": "OrderCreated",
+  "namespace": "ru.otus.kafka.hw6.avro",
+  "fields": [
+    {"name": "orderId", "type": "string"},
+    {"name": "userId", "type": "int"}
+  ]
+}
+```
+
+**Почему несовместима:**
+- изменили тип `orderId` с `int` на `string`;
+- старые consumer'ы ожидают `int` → получат ошибку парсинга;
+- Schema Registry отклонит регистрацию.
+
+## Ответы на вопросы
+
+### 1. Что хранит Schema Registry?
+
+Schema Registry — сервис, который хранит и управляет Avro-схемами для Kafka-топиков.
+
+| Что хранит | Описание |
+|---|---|
+| Схемы | Avro, JSON Schema, Protobuf |
+| Версии схем | История изменений (v1, v2, v3...) |
+| Уникальные ID | Каждая схема получает `schemaId` |
+| Маппинг | `subject` → версии схем |
+| Режим совместимости | BACKWARD, FORWARD, FULL, NONE |
+| Метаданные | Кто, когда, зачем зарегистрировал |
+
+**Как это работает:**
+
+```
+Producer → Schema Registry (регистрирует схему, получает schemaId)
+        → Kafka (отправляет сообщение + schemaId)
+
+Consumer → Kafka (читает сообщение + schemaId)
+        → Schema Registry (получает схему по schemaId)
+        → Десериализует сообщение
+```
+
+**Ключевые понятия:**
+- Subject = `<topic>-value` или `<topic>-key`
+- Schema ID = уникальный идентификатор схемы
+- Version = версия схемы в рамках subject
+
+### 2. Что означает BACKWARD compatibility?
+
+BACKWARD compatibility — режим совместимости, при котором новая схема может читать данные, записанные старой схемой.
+
+```
+Producer V1 ──▶ Kafka ──▶ Consumer V1
+Producer V1 ──▶ Kafka ──▶ Consumer V2 ✅ (BACKWARD)
+```
+
+**Что можно делать:**
+
+| Изменение | Совместимо? |
+|---|---|
+| Добавить поле с `default` | ✅ Да |
+| Удалить поле с `default` | ✅ Да |
+| Добавить поле без `default` | ❌ Нет |
+| Переименовать поле | ❌ Нет |
+| Изменить тип поля | ❌ Нет |
+
+**Порядок обновления:** сначала обновляем Consumer, потом обновляем Producer.
+
+### 3. Почему первая модификация совместима, а вторая — нет?
+
+**V1 → V2: совместима ✅**
+
+```diff
+  {"name": "orderId", "type": "int"},
+  {"name": "userId", "type": "int"},
++ {"name": "createdAt", "type": "string", "default": ""}
+```
+
+Почему совместима: добавили поле с `default`; старые данные не содержат `createdAt`; Consumer V2 подставит `default`; ничего не сломается.
+
+**V2 → V3: несовместима ❌**
+
+```diff
+- {"name": "orderId", "type": "int"},
++ {"name": "orderId", "type": "string"},
+  {"name": "userId", "type": "int"}
+```
+
+Почему несовместима: изменили тип `orderId` с `int` на `string`; старые данные содержат `int`; Consumer V3 ожидает `string` → ошибка парсинга; Schema Registry отклонит регистрацию.
+
+## Технологии
 
 | Компонент | Версия |
-|-----------|--------|
-| **Java** | 21 |
-| **Apache Kafka** | 4.3.1 (KRaft) |
-| **PostgreSQL** | 16 |
-| **Docker Compose** | latest |
-| **Maven** | 3.9.9 |
-| **Jackson** | 2.17.2 |
+|---|---|
+| Java | 21 |
+| Apache Kafka | 4.3.1 (KRaft) |
+| Confluent Schema Registry | 7.6.0 |
+| Apache Avro | 1.11.3 |
+| PostgreSQL | 16 |
+| Docker Compose | latest |
+| Maven | 3.9.9 |
 
----
+## Ссылки
 
-## 🏆 Чек-лист требований ТЗ
+- [Apache Avro Documentation](https://avro.apache.org/docs/)
+- [Confluent Schema Registry](https://docs.confluent.io/platform/current/schema-registry/index.html)
+- [Schema Evolution](https://docs.confluent.io/platform/current/schema-registry/avro.html)
 
-| Требование | Статус |
-|------------|--------|
-| Java-сервис с БД, Kafka, Outbox | ✅ |
-| Заказ + `OrderCreated` в одной транзакции | ✅ |
-| Publisher читает необработанные записи | ✅ |
-| Воспроизведение сбоя отправки | ✅ |
-| Повторная отправка после восстановления | ✅ |
-| Логи: сохранение → неуспех → повтор → успех | ✅ |
-| Docker Compose | ✅ |
-| README с ответами на вопросы | ✅ |
+## Автор
 
----
-
-## 👨‍🎓 Автор
-
-**Имя:** [Ilyas]  
-**Курс:** Otus "Администрирование платформы Apache Kafka"  
-**Дата:** 2026-09-11
+- **Имя:** Ilyas
+- **Курс:** Otus «Администрирование платформы Apache Kafka»
+- **Дата:** 2026-09-22
