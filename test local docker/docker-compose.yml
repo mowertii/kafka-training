@@ -72,8 +72,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
       interval: 15s
       timeout: 10s
-      retries: 30           # 👈 УВЕЛИЧИТЬ
-      start_period: 180s    # 👈 УВЕЛИЧИТЬ с 90 до 180
+      retries: 30 
+      start_period: 180s 
     profiles: ["hw6", "hw7"]
 
   # ============================================================
@@ -106,13 +106,15 @@ services:
   hw7-app:
     build:
       context: .
-      dockerfile: homework-7-connect/Dockerfile
+      dockerfile: homework-7-rebalancing/Dockerfile   
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       BOOTSTRAP_SERVERS: kafka:19092
     profiles: ["hw7"]
+    stdin_open: true
+    tty: true
 
   # ============================================================
   # HW8 — STREAMS (заготовка)
