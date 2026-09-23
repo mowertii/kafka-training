@@ -138,10 +138,12 @@ services:
   hw9-app:
     build:
       context: .
-      dockerfile: homework-9-k8s/Dockerfile
+      dockerfile: homework-9-streams/Dockerfile
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       BOOTSTRAP_SERVERS: kafka:19092
     profiles: ["hw9"]
+    stdin_open: true
+    tty: true
