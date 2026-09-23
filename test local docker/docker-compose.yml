@@ -122,13 +122,15 @@ services:
   hw8-app:
     build:
       context: .
-      dockerfile: homework-8-streams/Dockerfile
+      dockerfile: homework-8-observability/Dockerfile
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       BOOTSTRAP_SERVERS: kafka:19092
     profiles: ["hw8"]
+    stdin_open: true
+    tty: true
 
   # ============================================================
   # HW9 — K8S (заготовка)
