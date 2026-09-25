@@ -101,7 +101,7 @@ services:
     tty: false
 
   # ============================================================
-  # HW7 — CONNECT (заготовка)
+  # HW7 — CONNECT
   # ============================================================
   hw7-app:
     build:
@@ -117,7 +117,7 @@ services:
     tty: true
 
   # ============================================================
-  # HW8 — STREAMS (заготовка)
+  # HW8 — STREAMS
   # ============================================================
   hw8-app:
     build:
@@ -133,7 +133,7 @@ services:
     tty: true
 
   # ============================================================
-  # HW9 — K8S (заготовка)
+  # HW9 — K8S
   # ============================================================
   hw9-app:
     build:
@@ -145,5 +145,26 @@ services:
     environment:
       BOOTSTRAP_SERVERS: kafka:19092
     profiles: ["hw9"]
+    stdin_open: true
+    tty: true
+
+  # ============================================================
+  # Проект (итоговая работа)
+  # ============================================================
+  project-app:
+    build:
+      context: .
+      dockerfile: project-outbox-idempotent/Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      BOOTSTRAP_SERVERS: kafka:19092
+      JDBC_URL: jdbc:postgresql://postgres:5432/kafkademo
+      JDBC_USER: demo
+      JDBC_PASSWORD: demo
+    profiles: ["project"]
     stdin_open: true
     tty: true

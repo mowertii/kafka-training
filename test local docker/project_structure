@@ -1,0 +1,27 @@
+project-outbox-idempotent/
+├── src/main/java/ru/otus/kafka/project/
+│   ├── ProjectApp.java                    # Точка входа
+│   ├── config/
+│   │   └── AppConfig.java                 # Конфигурация
+│   ├── model/
+│   │   ├── Order.java                     # Модель заказа
+│   │   ├── OutboxEvent.java               # Модель outbox-события
+│   │   └── Event.java                     # Модель события
+│   ├── producer/
+│   │   ├── OrderService.java              # Бизнес-логика (БД + outbox)
+│   │   └── OutboxRelay.java               # Relay: outbox → Kafka
+│   ├── consumer/
+│   │   ├── PaymentConsumer.java           # Consumer с inbox + retry
+│   │   └── DltConsumer.java               # DLT consumer
+│   ├── retry/
+│   │   └── RetryManager.java              # Управление retry topics
+│   ├── metrics/
+│   │   └── Metrics.java                   # Метрики (Micrometer)
+│   └── observability/
+│       └── CorrelationId.java             # Correlation ID
+├── src/main/resources/
+│   └── db/
+│       └── schema.sql                     # Схема БД
+├── Dockerfile
+├── pom.xml
+└── README.md

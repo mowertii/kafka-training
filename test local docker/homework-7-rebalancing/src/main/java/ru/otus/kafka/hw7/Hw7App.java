@@ -106,7 +106,9 @@ public class Hw7App {
     // ============================================================
     // Демонстрация rebalance: 2 consumer → остановка одного
     // ============================================================
-    private static void demoRebalance(boolean cooperative, boolean staticMembership) throws Exception {
+    private static final ObjectMapper JSON = new ObjectMapper()
+        .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+        .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS) 
         LogUtils.info("Демонстрация rebalance: 2 consumer, затем остановка одного");
 
         CountDownLatch latch = new CountDownLatch(2);
