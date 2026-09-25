@@ -139,7 +139,7 @@ public class ProjectApp {
     }
 
     /**
-     * Полная демонстрация.
+     * Демонстрация
      */
     private static void runDemo() throws Exception {
         LogUtils.info("=== ПОЛНАЯ ДЕМОНСТРАЦИЯ ===");
@@ -149,58 +149,76 @@ public class ProjectApp {
 
         DataSource ds = AppConfig.createDataSource();
 
-        // 2. Запускаем OutboxRelay (в фоне)
+        // 2. Запускаем OutboxRelay
         LogUtils.info("Запуск OutboxRelay...");
         OutboxRelay relay = new OutboxRelay(ds, AppConfig.BOOTSTRAP_SERVERS);
         Thread relayThread = new Thread(relay);
         relayThread.start();
 
-        // 3. Запускаем PaymentConsumer (в фоне)
-        LogUtils.info("Запуск PaymentConsumer...");
+        // 3. RetryManager (общий)
         RetryManager retryManager = new RetryManager(AppConfig.BOOTSTRAP_SERVERS);
-        PaymentConsumer paymentConsumer = new PaymentConsumer(
-            AppConfig.BOOTSTRAP_SERVERS, AppConfig.ORDERS_TOPIC, ds, retryManager);
-        Thread paymentThread = new Thread(paymentConsumer);
-        paymentThread.start();
 
-        // 4. Запускаем DltConsumer (в фоне)
+        // 4. Запускаем PaymentConsumer для MAIN топика
+        LogUtils.info("Запуск PaymentConsumer (main)...");
+        PaymentConsumer mainConsumer = new PaymentConsumer(
+            AppConfig.BOOTSTRAP_SERVERS, AppConfig.ORDERS_TOPIC, ds, retryManager);
+        Thread mainThread = new Thread(mainConsumer);
+        mainThread.start();
+
+        // 👇 5. Запускаем PaymentConsumer для RETRY.1
+        LogUtils.info("Запуск PaymentConsumer (retry.1)...");
+        PaymentConsumer retry1Consumer = new PaymentConsumer(
+            AppConfig.BOOTSTRAP_SERVERS, AppConfig.RETRY_1_TOPIC, ds, retryManager);
+        Thread retry1Thread = new Thread(retry1Consumer);
+        retry1Thread.start();
+
+        // 👇 6. Запускаем PaymentConsumer для RETRY.2
+        LogUtils.info("Запуск PaymentConsumer (retry.2)...");
+        PaymentConsumer retry2Consumer = new PaymentConsumer(
+            AppConfig.BOOTSTRAP_SERVERS, AppConfig.RETRY_2_TOPIC, ds, retryManager);
+        Thread retry2Thread = new Thread(retry2Consumer);
+        retry2Thread.start();
+
+        // 7. Запускаем DltConsumer
         LogUtils.info("Запуск DltConsumer...");
         DltConsumer dltConsumer = new DltConsumer(AppConfig.BOOTSTRAP_SERVERS, ds);
         Thread dltThread = new Thread(dltConsumer);
         dltThread.start();
 
-        // 5. Создаём заказы
+        // 8. Создаём заказы
         LogUtils.info("Создание заказов...");
         OrderService service = new OrderService(ds);
 
-        // Обычные заказы (будут успешно обработаны)
         for (int i = 1; i <= 5; i++) {
             service.createOrder("user-" + i, 1000 * i);
             Thread.sleep(500);
         }
 
-        // "Плохой" заказ (уйдёт в retry → DLT)
-        LogUtils.warning("Создание 'плохого' заказа (orderId содержит 'fail')...");
+        LogUtils.warning("Создание 'плохого' заказа...");
         service.createOrder("user-fail", 9999);
 
-        // 6. Ждём обработки
-        LogUtils.info("Ожидание обработки (30 секунд)...");
-        Thread.sleep(30000);
+        // 9. Ждём обработки (retry занимает время: 3s + 6s + обработка)
+        LogUtils.info("Ожидание обработки (45 секунд)...");
+        Thread.sleep(45000);
 
-        // 7. Остановка
+        // 10. Остановка
         LogUtils.warning("Остановка...");
         relay.shutdown();
-        paymentConsumer.shutdown();
+        mainConsumer.shutdown();
+        retry1Consumer.shutdown();
+        retry2Consumer.shutdown();
         dltConsumer.shutdown();
 
         relayThread.join(5000);
-        paymentThread.join(5000);
+        mainThread.join(5000);
+        retry1Thread.join(5000);
+        retry2Thread.join(5000); 
         dltThread.join(5000);
 
-        // 8. Метрики
+        // 11. Метрики
         Metrics.print();
 
-        // 9. Проверка БД
+        // 12. Проверка БД
         printDbState(ds);
 
         LogUtils.success("✅ Демонстрация завершена");
@@ -287,4 +305,5 @@ public class ProjectApp {
         System.out.println("  dlt               - run DltConsumer only");
         System.out.println("  metrics           - print metrics");
     }
+    
 }

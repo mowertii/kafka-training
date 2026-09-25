@@ -17,7 +17,7 @@ Production-ready сервис, демонстрирующий **надёжную
 
 ## 🏗️ Архитектура
 
-```
+~~~text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         ORDER SERVICE (Producer)                            │
 │                                                                             │
@@ -47,17 +47,7 @@ Production-ready сервис, демонстрирующий **надёжную
 │  5. После N попыток → DLT                                                   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          OBSERVABILITY                                      │
-│                                                                             │
-│  - Correlation ID в headers и логах                                         │
-│  - Метрики: processed, errors, retried, DLT                                 │
-│  - Логи: все шаги с correlationId                                           │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+~~~
 
 ---
 
@@ -88,7 +78,6 @@ kafka-training/
 │   └── pom.xml
 │
 ├── docker-compose.yml
-├── pom.xml
 ├── pom-docker-project.xml
 ├── project-full.sh                            # Единый скрипт (Linux)
 ├── project-full.cmd                           # Единый скрипт (Windows)
@@ -141,12 +130,6 @@ docker compose -p kafka-training --profile project run --rm --build project-app 
 
 # 3. Полная демонстрация
 docker compose -p kafka-training --profile project run --rm project-app demo
-
-# 4. Только producer (OutboxRelay)
-docker compose -p kafka-training --profile project run --rm project-app producer
-
-# 5. Только consumer (PaymentConsumer)
-docker compose -p kafka-training --profile project run --rm project-app consumer
 ~~~
 
 ### Проверка БД
@@ -165,41 +148,31 @@ SELECT * FROM dlt_messages;
 
 ## 📊 Результаты проверки
 
-### 1. Создание заказов (Producer + Outbox)
+### 1. Полный цикл обработки
 
 ~~~text
-[correlationId=d7673a49...] 📝 Создание заказа: order-28e57b90
-[correlationId=d7673a49...] ✅ [БД] orders: id=order-28e57b90 userId=user-1 amount=1000
-[correlationId=d7673a49...] ✅ [БД] outbox: eventId=c298decb... eventType=OrderCreated status=pending
-[correlationId=d7673a49...] 🎯 [БД] Транзакция закоммичена: order + outbox сохранены АТОМАРНО
+[correlationId=07be7372...] 📩 [CONSUMER] Получено: retryCount=0
+[correlationId=07be7372...] ❌ [CONSUMER] Ошибка: Имитация ошибки
+[correlationId=07be7372...] 🔄 RETRY #1 → orders.retry.1
+
+[correlationId=07be7372...] 📩 [CONSUMER] Получено: retryCount=1
+[correlationId=07be7372...] ❌ [CONSUMER] Ошибка
+[correlationId=07be7372...] 🔄 RETRY #2 → orders.retry.2
+
+[correlationId=07be7372...] 📩 [CONSUMER] Получено: retryCount=2
+[correlationId=07be7372...] ❌ [CONSUMER] Ошибка
+[correlationId=07be7372...] 💀 RETRY #3 → orders.dlt
+
+[correlationId=07be7372...] 💀 [DLT] Сохранено в БД для анализа
 ~~~
 
-**Что видно:** заказ и событие сохранены **в одной транзакции**.
+**Что видно:**
+- ✅ Все шаги с одним `correlationId`
+- ✅ `retryCount` увеличивается
+- ✅ После 3 попыток → DLT
+- ✅ DLT сохраняет в БД
 
-### 2. Публикация в Kafka (OutboxRelay)
-
-~~~text
-[correlationId=d7673a49...] 📤 [KAFKA] Опубликовано: id=c298decb... eventType=OrderCreated
-📤 [RELAY] Батч завершён: отправлено=1, ошибок=0
-~~~
-
-**Что видно:** Relay прочитал outbox и опубликовал в Kafka.
-
-### 3. Обработка (Idempotent Consumer)
-
-~~~text
-[correlationId=d7673a49...] 📩 [CONSUMER] Получено: eventId=c298decb... retryCount=0
-[correlationId=d7673a49...] 💰 [CONSUMER] Платёж создан: orderId=order-28e57b90
-[correlationId=d7673a49...] ✅ [CONSUMER] Inbox записан: eventId=c298decb...
-[correlationId=d7673a49...] ✅ PROCESSED за 527ms
-~~~
-
-**Что видно:** 
-- Платёж создан
-- Inbox записан (идемпотентность)
-- Все логи с одним `correlationId`
-
-### 4. Метрики
+### 2. Метрики
 
 ~~~text
 ╔══════════════════════════════════════════════════════════════╗
@@ -207,16 +180,16 @@ SELECT * FROM dlt_messages;
 ╠══════════════════════════════════════════════════════════════╣
 ║ Orders created:                     6                       ║
 ║ Outbox published:                   6                       ║
-║ Events processed:                   6                       ║
+║ Events processed:                   5                       ║
 ║ Events duplicated:                  0                       ║
-║ Events retried:                     0                       ║
-║ Events sent to DLT:                 0                       ║
-║ Processing errors:                  0                       ║
-║ Avg processing time (ms):      485.50                       ║
+║ Events retried:                     3                       ║
+║ Events sent to DLT:                 2                       ║
+║ Processing errors:                  5                       ║
+║ Avg processing time (ms):      310.20                       ║
 ╚══════════════════════════════════════════════════════════════╝
 ~~~
 
-### 5. Состояние БД
+### 3. Состояние БД
 
 ~~~text
 ╔══════════════════════════════════════════════════════════════╗
@@ -224,11 +197,18 @@ SELECT * FROM dlt_messages;
 ╠══════════════════════════════════════════════════════════════╣
 ║ Orders:                            6                       ║
 ║ Outbox:                            6                       ║
-║ Inbox:                             6                       ║
-║ Payments:                          6                       ║
-║ DLT messages:                      0                       ║
+║ Inbox:                             5                       ║
+║ Payments:                          5                       ║
+║ DLT messages:                      2                       ║
 ╚══════════════════════════════════════════════════════════════╝
 ~~~
+
+**Что видно:**
+- ✅ 6 заказов создано
+- ✅ 6 событий в outbox (все опубликованы)
+- ✅ 5 платежей (1 "плохой" не обработан)
+- ✅ 5 записей в inbox (идемпотентность)
+- ✅ 2 DLT-сообщения (для анализа)
 
 ---
 
@@ -256,8 +236,6 @@ producer.send(event) → FAIL
   5. UPDATE status='published'
 ~~~
 
-**Гарантия:** если транзакция закоммичена, событие **обязательно** будет отправлено.
-
 ### 2. Idempotent Consumer (Inbox)
 
 **Проблема at-least-once:**
@@ -280,8 +258,8 @@ producer.send(event) → FAIL
 
 **Логика:**
 ~~~text
-orders.events → ошибка → orders.retry.1
-orders.retry.1 → ошибка → orders.retry.2
+orders.events → ошибка → orders.retry.1 (через 3s)
+orders.retry.1 → ошибка → orders.retry.2 (через 6s)
 orders.retry.2 → ошибка → orders.dlt
 ~~~
 
@@ -301,7 +279,7 @@ orders.retry.2 → ошибка → orders.dlt
 3. Consumer читает из headers
 4. Все логи содержат correlationId
 
-grep "correlationId=d7673a49" → все логи цепочки!
+grep "correlationId=07be7372" → все логи цепочки!
 ~~~
 
 ### 5. Метрики
